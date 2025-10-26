@@ -1,0 +1,223 @@
+import pytest
+
+from model_router.core.config import RouterConfig
+from model_router.core.middleware import MiddlewareChain
+from model_router.core.router import Router
+from model_router.domain.interfaces import IUsageTracker
+from model_router.domain.models import (
+    ModelConfig,
+    Provider,
+    Request,
+    Response,
+    RoutingConstraints,
+    RoutingDecision,
+)
+from model_router.providers.base import ProviderConfig
+
+
+class _FakeProvider:
+    def __init__(self, response: Response | None = None, should_fail: bool = False):
+        self.response = response or Response(
+            content="ok", model_used="gpt-4", cost=0.02, latency=0.2, tokens=10
+        )
+        self.should_fail = should_fail
+        self.calls = 0
+
+    def complete(self, request: Request) -> Response:
+        self.calls += 1
+        if self.should_fail:
+            raise RuntimeError("provider failure")
+        return self.response
+
+
+class _ProviderFactoryStub:
+    def __init__(self):
+        self.providers = {}
+        self.requests = []
+
+    def register(self, model_name: str, provider):
+        self.providers[model_name] = provider
+
+    def create(self, model_name: str, config: ProviderConfig):
+        self.requests.append((model_name, config))
+        return self.providers[model_name]
+
+
+class _RoutingEngineStub:
+    def __init__(self, decision: RoutingDecision):
+        self.decision = decision
+        self.calls = []
+
+    def route(
+        self, request: Request, constraints: RoutingConstraints
+    ) -> RoutingDecision:
+        self.calls.append((request, constraints))
+        return self.decision
+
+
+class _TrackerStub(IUsageTracker):
+    def __init__(self):
+        self.tracks = 0
+        self.last = None
+
+    def track(self, request: Request, response: Response) -> None:
+        self.tracks += 1
+        self.last = (request, response)
+
+    def get_summary(self, period: str = "last_7_days"):
+        raise NotImplementedError
+
+    def to_dataframe(self):
+        raise NotImplementedError
+
+
+def _build_router(
+    decision: RoutingDecision,
+    tracker: IUsageTracker | None = None,
+    config: RouterConfig | None = None,
+):
+    provider_config = ProviderConfig(api_key="key", base_url="https://api.openai.com")
+    factory = _ProviderFactoryStub()
+    provider = _FakeProvider(
+        response=Response(
+            content="ok",
+            model_used=decision.selected_model.model_name,
+            cost=0.02,
+            latency=0.3,
+            tokens=20,
+        )
+    )
+    factory.register(decision.selected_model.model_name, provider)
+    engine = _RoutingEngineStub(decision)
+    config = config or RouterConfig()
+    tracker = tracker or _TrackerStub()
+    router = Router(
+        config=config,
+        provider_factory=factory,
+        routing_engine=engine,
+        provider_configs={decision.selected_model.provider.value: provider_config},
+        tracker=tracker,
+        middleware=MiddlewareChain([]),
+    )
+    return router, factory, provider, engine, tracker
+
+
+def _model(name="gpt-4"):
+    return ModelConfig(
+        provider=Provider.OPENAI,
+        model_name=name,
+        pricing=0.02,
+        capabilities=frozenset({"chat"}),
+    )
+
+
+def test_complete_routes_and_invokes_provider():
+    decision = RoutingDecision(
+        selected_model=_model(),
+        estimated_cost=0.02,
+        reasoning="ok",
+        alternatives_considered=(),
+    )
+    router, factory, provider, engine, tracker = _build_router(decision)
+
+    response = router.complete("Hello world")
+
+    assert response.model_used == "gpt-4"
+    assert provider.calls == 1
+    assert len(engine.calls) == 1
+    assert tracker.tracks == 1
+
+
+def test_chat_converts_messages_to_prompt():
+    decision = RoutingDecision(
+        selected_model=_model(),
+        estimated_cost=0.02,
+        reasoning="ok",
+        alternatives_considered=(),
+    )
+    router, *_ = _build_router(decision)
+
+    response = router.chat(
+        [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hey"}]
+    )
+
+    assert response.content == "ok"
+
+
+def test_configure_fallback_updates_config():
+    decision = RoutingDecision(
+        selected_model=_model(),
+        estimated_cost=0.02,
+        reasoning="ok",
+        alternatives_considered=(),
+    )
+    router, *_ = _build_router(decision)
+
+    router.configure_fallback(["gpt-3.5"])
+
+    assert router._config.fallback_models == ["gpt-3.5"]
+
+
+def test_fallback_attempts_other_models():
+    model = _model()
+    fallback_model = "gpt-3.5"
+    decision = RoutingDecision(
+        selected_model=model,
+        estimated_cost=0.02,
+        reasoning="ok",
+        alternatives_considered=(),
+    )
+    provider_config = ProviderConfig(api_key="key", base_url="https://api.openai.com")
+    factory = _ProviderFactoryStub()
+    primary_provider = _FakeProvider(should_fail=True)
+    fallback_provider = _FakeProvider(
+        response=Response(
+            content="fallback",
+            model_used=fallback_model,
+            cost=0.01,
+            latency=0.1,
+            tokens=5,
+        )
+    )
+    factory.register(model.model_name, primary_provider)
+    factory.register(fallback_model, fallback_provider)
+    engine = _RoutingEngineStub(decision)
+    config = RouterConfig(fallback_models=[fallback_model], max_retries=2)
+    router = Router(
+        config=config,
+        provider_factory=factory,
+        routing_engine=engine,
+        provider_configs={model.provider.value: provider_config},
+        tracker=_TrackerStub(),
+        middleware=MiddlewareChain([]),
+    )
+
+    response = router.complete("hello")
+
+    assert response.model_used == fallback_model
+    assert primary_provider.calls == 1
+    assert fallback_provider.calls == 1
+
+
+def test_analytics_property_requires_tracker():
+    decision = RoutingDecision(
+        selected_model=_model(),
+        estimated_cost=0.02,
+        reasoning="ok",
+        alternatives_considered=(),
+    )
+    provider_config = ProviderConfig(api_key="key", base_url="https://api.openai.com")
+    factory = _ProviderFactoryStub()
+    factory.register("gpt-4", _FakeProvider())
+    engine = _RoutingEngineStub(decision)
+    router = Router(
+        config=RouterConfig(),
+        provider_factory=factory,
+        routing_engine=engine,
+        provider_configs={decision.selected_model.provider.value: provider_config},
+        tracker=None,
+        middleware=MiddlewareChain([]),
+    )
+
+    with pytest.raises(RuntimeError):
+        _ = router.analytics

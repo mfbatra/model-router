@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "model-router"
+version = "0.1.0"  # First release!
+description = "Intelligent multi-LLM request router for cost optimization"
+authors = ["Faizan Batra <fbatra1@gmail.com>"]
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/mfbatra/model-router"
+keywords = ["llm", "ai", "routing", "optimization", "openai", "anthropic"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+pydantic = "^2.0"
+httpx = "^0.27"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+black = "^23.7.0"
+mypy = "^1.6.1"
+ruff = "^0.1.4"
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: integration tests that hit the router end-to-end",
+]
+
+[build-system]
+requires = ["poetry-core>=1.6.1"]
+build-backend = "poetry.core.masonry.api"
