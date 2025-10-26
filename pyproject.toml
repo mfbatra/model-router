@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "model-router"
+name = "llm-model-router"
 version = "0.1.0"  # First release!
 description = "Intelligent multi-LLM request router for cost optimization"
 authors = ["Faizan Batra <fbatra1@gmail.com>"]
