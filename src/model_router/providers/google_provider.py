@@ -30,6 +30,7 @@ DEFAULT_GEMINI_MODEL = ModelConfig(
 class GoogleProvider(BaseProvider):
     """Adapter for Google Gemini APIs with httpx transport injection."""
 
+    PROVIDER_KEY = Provider.GOOGLE.value
     DEFAULT_MODEL_CONFIG = DEFAULT_GEMINI_MODEL
 
     def __init__(

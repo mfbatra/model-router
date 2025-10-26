@@ -14,7 +14,7 @@ from model_router.domain.exceptions import (
     ProviderRateLimitError,
     ProviderUnavailableError,
 )
-from model_router.domain.models import ModelConfig, Request, Response
+from model_router.domain.models import ModelConfig, Provider, Request, Response
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,8 @@ class ProviderConfig:
 
 class BaseProvider(ABC):
     """Template-method base class that handles retries and logging."""
+
+    PROVIDER_KEY = Provider.CUSTOM.value
 
     def __init__(
         self,

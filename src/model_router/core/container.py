@@ -44,16 +44,29 @@ class DIContainer:
     def create_router(
         *,
         openai_key: Optional[str] = None,
+        openai_api_key: Optional[str] = None,
         anthropic_key: Optional[str] = None,
+        anthropic_api_key: Optional[str] = None,
         google_key: Optional[str] = None,
+        google_api_key: Optional[str] = None,
         config: Optional[RouterConfig] = None,
         analytics_db_path: str | Path = "analytics.db",
     ) -> Router:
+        resolved_openai_key = DIContainer._normalize_api_key(
+            "openai", openai_key, openai_api_key
+        )
+        resolved_anthropic_key = DIContainer._normalize_api_key(
+            "anthropic", anthropic_key, anthropic_api_key
+        )
+        resolved_google_key = DIContainer._normalize_api_key(
+            "google", google_key, google_api_key
+        )
+
         cfg = config or RouterConfig.from_env()
         provider_configs = DIContainer._build_provider_configs(
-            openai_key=openai_key,
-            anthropic_key=anthropic_key,
-            google_key=google_key,
+            openai_key=resolved_openai_key,
+            anthropic_key=resolved_anthropic_key,
+            google_key=resolved_google_key,
         )
         if not provider_configs:
             raise ValueError("At least one provider API key must be supplied")
@@ -175,3 +188,18 @@ class DIContainer:
         if config.enable_cache:
             middlewares.append(CachingMiddleware({}))
         return MiddlewareChain(middlewares)
+
+    @staticmethod
+    def _normalize_api_key(
+        provider_name: str, *keys: Optional[str]
+    ) -> Optional[str]:
+        """Allow both *_key and *_api_key kwargs while preventing conflicts."""
+        provided = [key for key in keys if key]
+        if not provided:
+            return None
+        unique_values = set(provided)
+        if len(unique_values) > 1:
+            raise ValueError(
+                f"Conflicting API keys supplied for {provider_name}: {provided}"
+            )
+        return provided[0]

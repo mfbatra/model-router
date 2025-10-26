@@ -30,6 +30,7 @@ DEFAULT_CHAT_MODEL = ModelConfig(
 class OpenAIProvider(BaseProvider):
     """Concrete provider that speaks to OpenAI's chat completions API."""
 
+    PROVIDER_KEY = Provider.OPENAI.value
     DEFAULT_MODEL_CONFIG = DEFAULT_CHAT_MODEL
 
     def __init__(

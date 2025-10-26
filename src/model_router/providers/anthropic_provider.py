@@ -30,6 +30,7 @@ DEFAULT_ANTHROPIC_MODEL = ModelConfig(
 class AnthropicProvider(BaseProvider):
     """Concrete adapter around Anthropic's Messages API."""
 
+    PROVIDER_KEY = Provider.ANTHROPIC.value
     DEFAULT_MODEL_CONFIG = DEFAULT_ANTHROPIC_MODEL
 
     def __init__(

@@ -34,6 +34,20 @@ def test_create_router_requires_key():
         DIContainer.create_router()
 
 
+def test_create_router_accepts_api_key_alias(tmp_path):
+    router = DIContainer.create_router(
+        openai_api_key="sk-test",
+        analytics_db_path=tmp_path / "analytics.db",
+    )
+
+    assert isinstance(router, Router)
+
+
+def test_create_router_conflicting_key_values():
+    with pytest.raises(ValueError):
+        DIContainer.create_router(openai_key="one", openai_api_key="two")
+
+
 def test_create_router_wires_dependencies(tmp_path):
     router = DIContainer.create_router(
         openai_key="sk-test",

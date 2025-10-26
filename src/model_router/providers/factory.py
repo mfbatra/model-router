@@ -10,7 +10,7 @@ import httpx
 
 from model_router.domain.exceptions import ProviderError
 from model_router.domain.interfaces import IProvider
-from model_router.domain.models import ModelConfig
+from model_router.domain.models import ModelConfig, Provider
 
 from .base import ProviderConfig
 from .anthropic_provider import AnthropicProvider
@@ -44,6 +44,15 @@ class ProviderFactory:
     def register_provider(self, pattern: str, provider_class: Type[IProvider]) -> None:
         compiled = re.compile(pattern, re.IGNORECASE)
         self._registry.append((compiled, provider_class))
+
+    def infer_provider_key(self, model_name: str) -> str:
+        provider_cls = self._detect_provider(model_name)
+        provider_key = getattr(provider_cls, "PROVIDER_KEY", Provider.CUSTOM.value)
+        if not provider_key:
+            raise ProviderError(
+                f"Provider '{provider_cls.__name__}' does not declare PROVIDER_KEY"
+            )
+        return provider_key
 
     # ------------------------------------------------------------------
     # Internal helpers

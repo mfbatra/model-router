@@ -42,6 +42,7 @@ class Router:
         self._provider_configs = dict(provider_configs)
         self._tracker = tracker
         self._middleware = middleware or MiddlewareChain(middlewares or [])
+        self._forced_provider: Optional[str] = None
 
     def complete(
         self,
@@ -84,6 +85,19 @@ class Router:
         self._config = replace(self._config, fallback_models=list(models))
 
     @property
+    def default_provider(self) -> Optional[str]:
+        return self._forced_provider
+
+    @default_provider.setter
+    def default_provider(self, provider_name: Optional[str]) -> None:
+        if provider_name is not None and provider_name not in self._provider_configs:
+            raise ValueError(
+                f"Unknown provider '{provider_name}'. "
+                f"Available: {sorted(self._provider_configs)}"
+            )
+        self._forced_provider = provider_name
+
+    @property
     def analytics(self) -> IUsageTracker:
         if not self._tracker:
             raise RuntimeError("Analytics tracker not configured")
@@ -116,21 +130,44 @@ class Router:
         decision: RoutingDecision,
         request: Request,
     ) -> Response:
-        provider_key = decision.selected_model.provider.value
-        provider_config = self._provider_configs.get(provider_key)
-        if provider_config is None:
-            raise ValueError(
-                f"No provider config registered for provider '{provider_key}'"
-            )
+        initial_candidates = [decision.selected_model, *decision.alternatives_considered]
+        provider_attempts: list[tuple[str, str]] = [
+            (candidate.model_name, candidate.provider.value)
+            for candidate in initial_candidates
+        ]
 
-        model_names = [decision.selected_model.model_name]
-        model_names.extend(self._config.fallback_models)
+        seen_models = set(provider_attempts)
+        for fallback_model in self._config.fallback_models:
+            try:
+                provider_key = self._provider_factory.infer_provider_key(fallback_model)
+            except Exception:
+                continue
+            candidate = (fallback_model, provider_key)
+            if candidate not in seen_models:
+                provider_attempts.append(candidate)
+                seen_models.add(candidate)
+
+        if self._forced_provider:
+            preferred = [
+                attempt
+                for attempt in provider_attempts
+                if attempt[1] == self._forced_provider
+            ]
+            rest = [
+                attempt
+                for attempt in provider_attempts
+                if attempt[1] != self._forced_provider
+            ]
+            provider_attempts = preferred + rest
 
         attempts = 0
         last_error: Optional[Exception] = None
-        for model_name in model_names:
+        for model_name, provider_key in provider_attempts:
             if attempts >= self._config.max_retries:
                 break
+            provider_config = self._provider_configs.get(provider_key)
+            if provider_config is None:
+                continue
             provider = self._provider_factory.create(model_name, provider_config)
             try:
                 return provider.complete(request)

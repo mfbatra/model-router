@@ -1,10 +1,11 @@
 [tool.poetry]
 name = "llm-model-router"
-version = "0.1.0"  # First release!
+version = "0.2.0"  # First release!
 description = "Intelligent multi-LLM request router for cost optimization"
 authors = ["Faizan Batra <fbatra1@gmail.com>"]
 license = "Apache-2.0"
 readme = "README.md"
+packages = [{include = "model_router", from = "src"}]  # Add this line!
 repository = "https://github.com/mfbatra/model-router"
 keywords = ["llm", "ai", "routing", "optimization", "openai", "anthropic"]
 classifiers = [
